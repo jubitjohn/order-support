@@ -4,12 +4,15 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Truck, PhoneCall, AlertTriangle, MessageSquarePlus, CheckCircle2, Search, Crosshair, Package, MapPin } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 export default function OFDTracker() {
     const router = useRouter();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
+    const [marking, setMarking] = useState({}); // Tracking loading state for each order
+
 
     useEffect(() => {
         async function fetchOFD() {
@@ -42,6 +45,28 @@ export default function OFDTracker() {
     const isCOD = (order) => {
         const p = (order['Payment_Mode'] || order['Payment_Status'] || order['Payment Method'] || order['Payment'] || "").toLowerCase();
         return p.includes("cod") || p.includes("cash");
+    };
+
+    const handleMarkCalled = async (orderId, rowNumber) => {
+        setMarking(prev => ({ ...prev, [orderId]: true }));
+        try {
+            const res = await fetch("/api/orders/ofd/called", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orderId, rowNumber, status: "Called" })
+            });
+            const data = await res.json();
+            if (data.success) {
+                // Optimistically update the UI
+                setOrders(prev => prev.map(o => 
+                    o.Order_ID === orderId ? { ...o, OFD_Called: "Called" } : o
+                ));
+            }
+        } catch (e) {
+            console.error("Failed to mark as called:", e);
+        } finally {
+            setMarking(prev => ({ ...prev, [orderId]: false }));
+        }
     };
 
     if (loading) {
@@ -102,81 +127,148 @@ export default function OFDTracker() {
                     <p className="text-slate-500 mt-1">There are no orders actively out for delivery matching your criteria right now.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filtered.map((order, idx) => {
                         const amountStr = (order.Amount || "").toString().replace(/[^\d.-]/g, '');
                         const amount = parseFloat(amountStr) || 0;
                         const phone = (order.Phone || "").toString().replace(/\\D/g, "");
                         const isCodOrder = isCOD(order);
+                        const isCalled = order.OFD_Called === "Called";
 
                         return (
                             <motion.div
                                 key={order.Order_ID || idx}
-                                initial={{ opacity: 0, y: 10 }}
+                                initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: idx * 0.05 }}
-                                className={`glass-panel p-5 rounded-2xl flex flex-col gap-4 relative overflow-hidden transition-all hover:shadow-lg ${isCodOrder ? 'border border-amber-200 shadow-amber-500/5' : ''}`}
-                            >
-                                {isCodOrder && (
-                                    <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-bl-lg shadow-sm">
-                                        COD Required
-                                    </div>
+                                className={cn(
+                                    "glass-panel rounded-3xl flex flex-col relative overflow-hidden transition-all duration-300",
+                                    isCalled ? "opacity-75 blur-[0.2px] grayscale-[0.3]" : "hover:shadow-xl hover:shadow-gold-500/10 hover:-translate-y-1",
+                                    isCodOrder && !isCalled && "border-amber-200/50 shadow-lg shadow-amber-500/5"
                                 )}
+                            >
+                                {/* Status Badges */}
+                                <div className="absolute top-4 right-4 flex flex-col items-end gap-2 z-10">
+                                    {isCalled ? (
+                                        <div className="bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 border border-emerald-400">
+                                            <CheckCircle2 className="w-3 h-3" />
+                                            Already Called
+                                        </div>
+                                    ) : (
+                                        isCodOrder && (
+                                            <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg shadow-amber-500/20 flex items-center gap-1.5 border border-amber-400">
+                                                <AlertTriangle className="w-3 h-3" />
+                                                COD Required
+                                            </div>
+                                        )
+                                    )}
+                                </div>
 
-                                <div className="pr-12">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs font-mono font-bold text-gold-600 bg-gold-50 px-2 py-0.5 rounded border border-gold-100">
+                                <div className="p-6 flex-1">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <span className="text-[10px] font-mono font-black text-gold-600 bg-gold-50 px-2.5 py-1 rounded-lg border border-gold-200 uppercase tracking-tighter">
                                             {order.Order_ID}
                                         </span>
-                                        <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 uppercase tracking-tight">
-                                            COD Pending: ₹{amount.toLocaleString()}
-                                        </span>
                                     </div>
 
-                                    <h3 className="text-lg font-bold text-slate-800 mt-2 truncate">
+                                    <h3 className="text-xl font-bold text-slate-800 leading-tight">
                                         {order.Customer_Name || "Customer"}
                                     </h3>
 
-                                    <div className="space-y-1.5 mt-2">
-                                        <div className="flex items-center gap-2">
-                                            <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                            <span className="text-xs font-semibold text-slate-600 truncate">
-                                                {order.Product_Type || order.Product || "Product not specified"}
-                                            </span>
+                                    <div className="mt-4 space-y-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100 shrink-0">
+                                                <Package className="w-4 h-4 text-slate-400" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Product</span>
+                                                <span className="text-sm font-semibold text-slate-700 truncate max-w-[180px]">
+                                                    {order.Product_Type || order.Product || "Standard Item"}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="flex items-start gap-2">
-                                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                                            <div>
-                                                <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                                                    {order.Address || "No address provided"}
+
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-50/50 flex items-center justify-center border border-blue-100/50 shrink-0">
+                                                <Truck className="w-3.5 h-3.5 text-blue-500" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Courier Partner</span>
+                                                <span className="text-sm font-semibold text-slate-700 truncate max-w-[180px]">
+                                                    {order.Courier || "Assigning..."}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100 shrink-0 mt-0.5">
+                                                <MapPin className="w-4 h-4 text-slate-400" />
+                                            </div>
+                                            <div className="flex flex-col flex-1 min-w-0">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Delivery Address</span>
+                                                <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed font-medium mt-0.5">
+                                                    {order.Address || "Address not available"}
                                                 </p>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                                                    {order.City ? `${order.City}, ` : ""}{order.Pincode || "No Pincode"}
+                                                <p className="text-[10px] text-gold-600 font-black uppercase tracking-widest mt-1">
+                                                    {order.City || "Unknown City"} · {order.Pincode || "000000"}
                                                 </p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="mt-auto pt-4 border-t border-slate-100/60 flex items-center justify-between gap-2">
-                                    <a
-                                        href={`tel:+91${phone}`}
-                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold shadow-sm transition-all active:scale-95 ${isCodOrder
-                                                ? "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20"
-                                                : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
-                                            }`}
-                                    >
-                                        <PhoneCall className="w-4 h-4" />
-                                        Call {isCodOrder ? "for COD" : "Customer"}
-                                    </a>
+                                {/* Financial Info & Actions */}
+                                <div className="p-6 pt-0 mt-auto">
+                                    <div className="bg-slate-50 rounded-2xl p-4 mb-4 border border-slate-100 flex items-center justify-between">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Collection Amount</span>
+                                            <span className="text-lg font-black text-slate-800 tracking-tight">₹{amount.toLocaleString()}</span>
+                                        </div>
+                                        {isCodOrder && (
+                                            <div className="text-right">
+                                                <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest block mb-1">Payment Method</span>
+                                                <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-1 rounded-md border border-amber-200 uppercase">Cash on Delivery</span>
+                                            </div>
+                                        )}
+                                    </div>
 
-                                    <button
-                                        onClick={() => router.push(`/tickets/new?order_id=${order.Order_ID}&customer_name=${encodeURIComponent(order.Customer_Name || "")}&phone=${encodeURIComponent(order.Phone || "")}`)}
-                                        className="shrink-0 flex items-center justify-center w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors"
-                                        title="Log Support Ticket"
-                                    >
-                                        <MessageSquarePlus className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <a
+                                            href={`tel:+91${phone}`}
+                                            className={cn(
+                                                "flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all active:scale-95",
+                                                isCalled 
+                                                    ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
+                                                    : "gold-gradient-bg text-white shadow-gold-500/20 hover:shadow-gold-500/40"
+                                            )}
+                                        >
+                                            <PhoneCall className="w-4 h-4" />
+                                            Call Now
+                                        </a>
+
+                                        {!isCalled && (
+                                            <button
+                                                onClick={() => handleMarkCalled(order.Order_ID, order._rowNumber)}
+                                                disabled={marking[order.Order_ID]}
+                                                className="w-12 h-12 flex items-center justify-center bg-white border border-slate-200 text-slate-600 rounded-2xl transition-all hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 shadow-sm active:scale-90"
+                                                title="Mark as Called"
+                                            >
+                                                {marking[order.Order_ID] ? (
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                ) : (
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                        )}
+
+                                        <button
+                                            onClick={() => router.push(`/tickets/new?order_id=${order.Order_ID}&customer_name=${encodeURIComponent(order.Customer_Name || "")}&phone=${encodeURIComponent(order.Phone || "")}&product_name=${encodeURIComponent(order.Product_Type || order.Product || "")}`)}
+                                            className="w-12 h-12 flex items-center justify-center bg-white border border-slate-200 text-slate-600 rounded-2xl transition-all hover:bg-gold-50 hover:text-gold-600 hover:border-gold-200 shadow-sm active:scale-90"
+                                            title="Log Support Ticket"
+                                        >
+                                            <MessageSquarePlus className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                 </div>
                             </motion.div>
                         );
