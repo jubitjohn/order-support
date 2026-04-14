@@ -6,14 +6,17 @@ export async function GET(request) {
         const orders = await getOrdersMasterRaw();
         
         // Filter for strictly Out_For_Delivery in Vendor_Status, or Courier_Status having it
+        // AND must be a COD order
         const ofdOrders = orders.filter(order => {
             const vStatus = order['Vendor_Status'] || "";
             const cStatus = (order['Courier_Status'] || "").toLowerCase();
+            const pMode = (order['Payment_Mode'] || order['Payment_Status'] || order['Payment Method'] || order['Payment'] || "").toLowerCase();
             
             const isOFD = vStatus === "Out_For_Delivery" || cStatus.includes("out for delivery");
             const isFinished = vStatus === "Delivered" || vStatus === "RTO" || vStatus === "Cancelled";
+            const isCOD = pMode.includes("cod") || pMode.includes("cash");
             
-            return isOFD && !isFinished;
+            return isOFD && !isFinished && isCOD;
         });
 
         // Reverse to get newest first (simplistic approach assuming appended rows are newer)
