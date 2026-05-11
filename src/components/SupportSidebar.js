@@ -9,6 +9,7 @@ import {
     LogOut,
     X,
     Headset,
+    Truck,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ import { useAuth } from "@/components/SupportAuthProvider";
 const NAV_ITEMS = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "All Tickets", href: "/tickets", icon: TicketCheck },
+    { name: "OFD Tracker", href: "/ofd", icon: Truck },
     { name: "New Ticket", href: "/tickets/new", icon: PlusCircle },
 ];
 
