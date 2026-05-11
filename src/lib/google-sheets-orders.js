@@ -1,21 +1,19 @@
-
 import { GoogleAuth } from 'google-auth-library';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 
 function getAuth() {
-
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        return new GoogleAuth({
+            credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+        });
+    }
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     let envKey = process.env.GOOGLE_PRIVATE_KEY || '';
-
-    if (envKey.startsWith('"') && envKey.endsWith('"')) {
-        envKey = envKey.slice(1, -1);
-    }
-    const key = envKey.replace(/\\n/g, '\n');
-
-
+    if (envKey.startsWith('"') && envKey.endsWith('"')) envKey = envKey.slice(1, -1);
+    const key = envKey.replace(/\\n/g, '\n').replace(/\r/g, '');
     return new GoogleAuth({
         credentials: { client_email: email, private_key: key },
-
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 }
