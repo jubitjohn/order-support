@@ -11,6 +11,16 @@ let _cachedSheets = {};
 let _cachedSheetsTime = 0;
 const SHEET_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
+function parseKey(raw) {
+    if (raw.startsWith('"') && raw.endsWith('"')) raw = raw.slice(1, -1);
+    raw = raw.replace(/\r/g, '');
+    try {
+        return JSON.parse(`"${raw}"`);
+    } catch {
+        return raw.replace(/\\n/g, '\n');
+    }
+}
+
 function getAuth() {
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         return new GoogleAuth({
@@ -18,12 +28,11 @@ function getAuth() {
             scopes: ['https://www.googleapis.com/auth/spreadsheets'],
         });
     }
-    const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    let envKey = process.env.GOOGLE_PRIVATE_KEY || '';
-    if (envKey.startsWith('"') && envKey.endsWith('"')) envKey = envKey.slice(1, -1);
-    const key = envKey.replace(/\\n/g, '\n').replace(/\r/g, '');
     return new GoogleAuth({
-        credentials: { client_email: email, private_key: key },
+        credentials: {
+            client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            private_key: parseKey(process.env.GOOGLE_PRIVATE_KEY || ''),
+        },
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 }
