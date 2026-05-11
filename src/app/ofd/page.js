@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Truck, PhoneCall, AlertTriangle, MessageSquarePlus, CheckCircle2, Search, Crosshair, Package, MapPin } from "lucide-react";
+import { Loader2, Truck, PhoneCall, AlertTriangle, MessageSquarePlus, CheckCircle2, Search, Crosshair, Package, MapPin, Navigation, AlertOctagon, CheckCircle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
@@ -11,8 +11,20 @@ export default function OFDTracker() {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
-    const [marking, setMarking] = useState({}); // Tracking loading state for each order
+    const [marking, setMarking] = useState({});
+    const [pipeline, setPipeline] = useState(null);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState("");
 
+    async function fetchPipeline() {
+        try {
+            const res = await fetch("/api/orders/pipeline");
+            const data = await res.json();
+            if (data.success) setPipeline(data.data);
+        } catch (e) {
+            console.error("Failed to fetch pipeline stats:", e);
+        }
+    }
 
     useEffect(() => {
         async function fetchOFD() {
@@ -29,10 +41,41 @@ export default function OFDTracker() {
             }
         }
         fetchOFD();
+        fetchPipeline();
         // Auto refresh every 5 mins
-        const interval = setInterval(fetchOFD, 5 * 60 * 1000);
+        const interval = setInterval(() => { fetchOFD(); fetchPipeline(); }, 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, []);
+
+    const handleSync = async () => {
+        setSyncing(true);
+        setSyncMessage("");
+        try {
+            const res = await fetch("/api/sync/ithink-active", { method: "POST" });
+            const data = await res.json();
+            if (data.success) {
+                setSyncMessage(`Synced ${data.updates} updates from ${data.awbsFetched} active shipments!`);
+            } else {
+                setSyncMessage(`Sync failed: ${data.error || data.message}`);
+            }
+            // Refresh both pipeline stats and OFD list after sync settles
+            setTimeout(async () => {
+                const [ofdRes, pipeRes] = await Promise.all([
+                    fetch("/api/orders/ofd"),
+                    fetch("/api/orders/pipeline"),
+                ]);
+                const ofdData = await ofdRes.json();
+                const pipeData = await pipeRes.json();
+                if (ofdData.success) setOrders(ofdData.data);
+                if (pipeData.success) setPipeline(pipeData.data);
+            }, 1000);
+        } catch (e) {
+            setSyncMessage("Sync error occurred.");
+        } finally {
+            setSyncing(false);
+            setTimeout(() => setSyncMessage(""), 5000);
+        }
+    };
 
     const filtered = orders.filter(o => {
         const q = search.toLowerCase();
@@ -100,6 +143,71 @@ export default function OFDTracker() {
                     <strong>Agent Instructions:</strong> Identify COD orders and proactively call the customer. Inform them their Enchain Gifts order is arriving today and remind them to keep the cash ready. This heavily drops RTO rates!
                 </p>
             </motion.div>
+
+            {/* Post-Dispatch Pipeline */}
+            {pipeline && (
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="glass-panel rounded-2xl p-5"
+                >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 pb-4 border-b border-slate-100 gap-3">
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                <Truck className="w-4 h-4 text-gold-500" />
+                                Post-Dispatch Pipeline
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-0.5">Real-time status of all dispatched orders</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {syncMessage && (
+                                <span className={`text-xs font-semibold ${syncMessage.includes("failed") || syncMessage.includes("error") ? "text-red-500" : "text-emerald-500"}`}>
+                                    {syncMessage}
+                                </span>
+                            )}
+                            <button
+                                onClick={handleSync}
+                                disabled={syncing}
+                                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl hover:bg-slate-700 active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+                                {syncing ? "Syncing..." : "Sync Active Tracking"}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 divide-x divide-slate-100">
+                        <div className="px-3 flex items-center gap-3">
+                            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0"><Navigation className="w-4 h-4" /></div>
+                            <div>
+                                <p className="text-xs text-slate-500 font-medium">In Transit</p>
+                                <p className="text-xl font-bold text-slate-800">{pipeline.inTransit || 0}</p>
+                            </div>
+                        </div>
+                        <div className="px-3 flex items-center gap-3">
+                            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl shrink-0"><MapPin className="w-4 h-4" /></div>
+                            <div>
+                                <p className="text-xs text-slate-500 font-medium">Out For Delivery</p>
+                                <p className="text-xl font-bold text-slate-800">{pipeline.outForDelivery || 0}</p>
+                            </div>
+                        </div>
+                        <div className="px-3 flex items-center gap-3">
+                            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0"><CheckCircle className="w-4 h-4" /></div>
+                            <div>
+                                <p className="text-xs text-slate-500 font-medium">Delivered (Recent)</p>
+                                <p className="text-xl font-bold text-slate-800">{pipeline.delivered || 0}</p>
+                            </div>
+                        </div>
+                        <div className="px-3 flex items-center gap-3">
+                            <div className="p-2.5 bg-red-50 text-red-600 rounded-xl shrink-0"><AlertOctagon className="w-4 h-4" /></div>
+                            <div>
+                                <p className="text-xs text-slate-500 font-medium">RTO (Returned)</p>
+                                <p className="text-xl font-bold text-slate-800">{pipeline.rto || 0}</p>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
 
             {/* Search & Actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
