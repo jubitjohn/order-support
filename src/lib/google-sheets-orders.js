@@ -1,7 +1,9 @@
-import { JWT } from 'google-auth-library';
+
+import { GoogleAuth } from 'google-auth-library';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 
-function getJwt() {
+function getAuth() {
+
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     let envKey = process.env.GOOGLE_PRIVATE_KEY || '';
 
@@ -10,9 +12,10 @@ function getJwt() {
     }
     const key = envKey.replace(/\\n/g, '\n');
 
-    return new JWT({
-        email: email,
-        key: key,
+
+    return new GoogleAuth({
+        credentials: { client_email: email, private_key: key },
+
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 }
@@ -21,8 +24,10 @@ const MASTER_ORDERS_GID = '339152687';
 
 export async function getMasterDoc() {
     const sheetId = process.env.MASTER_LOOKUP_SHEET_ID;
-    const jwt = getJwt();
-    const doc = new GoogleSpreadsheet(sheetId, jwt);
+
+    const auth = getAuth();
+    const doc = new GoogleSpreadsheet(sheetId, auth);
+
     await doc.loadInfo();
     return doc;
 }

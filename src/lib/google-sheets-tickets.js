@@ -1,4 +1,4 @@
-import { JWT } from 'google-auth-library';
+import { GoogleAuth } from 'google-auth-library';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 
 // ─── Connection Cache (reuse authenticated doc for 5 min) ───────────
@@ -11,16 +11,15 @@ let _cachedSheets = {};
 let _cachedSheetsTime = 0;
 const SHEET_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
-function getJwt() {
+function getAuth() {
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     let envKey = process.env.GOOGLE_PRIVATE_KEY || '';
     if (envKey.startsWith('"') && envKey.endsWith('"')) {
         envKey = envKey.slice(1, -1);
     }
     const key = envKey.replace(/\\n/g, '\n');
-    return new JWT({
-        email,
-        key,
+    return new GoogleAuth({
+        credentials: { client_email: email, private_key: key },
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 }
@@ -31,8 +30,8 @@ async function getDoc() {
         return _cachedDoc;
     }
     const sheetId = process.env.MASTER_LOOKUP_SHEET_ID;
-    const jwt = getJwt();
-    const doc = new GoogleSpreadsheet(sheetId, jwt);
+    const auth = getAuth();
+    const doc = new GoogleSpreadsheet(sheetId, auth);
     await doc.loadInfo();
     _cachedDoc = doc;
     _cachedDocTime = now;
